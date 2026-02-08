@@ -6,6 +6,8 @@ import {
   optimizeQuestionOutputSchema,
 } from "@/lib/admin-schemas";
 import { requireAdminFromRequest } from "@/lib/auth/require-admin";
+import { logAdminAction, logServerError } from "@/lib/logger";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 const DEFAULT_MODEL = "gemini-3-flash-preview";
 
@@ -236,6 +238,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const rateLimit = checkRateLimit({
+    key: "admin:questions:optimize",
+    ipLike: request.headers.get("x-forwarded-for"),
+    limit: 10,
+    windowMs: 60_000,
+  });
+  if (!rateLimit.ok) {
+    return NextResponse.json(
+      { error: "Too many requests, please retry later" },
+      { status: 429 },
+    );
+  }
+
   const geminiApiKey = process.env.GEMINI_API_KEY;
   if (!geminiApiKey) {
     return NextResponse.json(
@@ -292,6 +307,11 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
+      logAdminAction("question.optimized", {
+        adminUserId: auth.user.id,
+        adminEmail: auth.user.email,
+        model,
+      });
       return NextResponse.json({ result: parsedOutput.data });
     }
 
@@ -300,6 +320,9 @@ export async function POST(request: NextRequest) {
       { status: 502 },
     );
   } catch (error) {
+    logServerError("admin.questions.optimize", error, {
+      adminUserId: auth.user.id,
+    });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "AI 优化失败" },
       { status: 500 },

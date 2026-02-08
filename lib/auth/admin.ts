@@ -1,6 +1,6 @@
 import type { User } from "@supabase/supabase-js";
 
-function parseAllowList(raw: string | undefined) {
+export function parseAllowList(raw: string | undefined) {
   if (!raw) return [];
   return raw
     .split(",")

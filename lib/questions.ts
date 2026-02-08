@@ -1,4 +1,6 @@
-import { createAdminClient } from "@/lib/supabase/admin";
+import { logServerError } from "@/lib/logger";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { createPublicClient } from "@/lib/supabase/public";
 
 export type PracticeQuestion = {
   id: number;
@@ -19,7 +21,7 @@ export type PracticeQuestionNavItem = {
   title: string;
 };
 
-type RawQuestion = {
+export type RawQuestion = {
   id: number;
   slug: string;
   title: string;
@@ -33,7 +35,7 @@ type RawQuestion = {
   reference_solution: string;
 };
 
-function toPracticeQuestion(item: RawQuestion): PracticeQuestion {
+export function normalizePracticeQuestion(item: RawQuestion): PracticeQuestion {
   return {
     id: item.id,
     slug: item.slug,
@@ -50,28 +52,38 @@ function toPracticeQuestion(item: RawQuestion): PracticeQuestion {
 }
 
 export async function getPublishedQuestions() {
+  if (!isSupabaseConfigured) {
+    return [] as PracticeQuestion[];
+  }
+
   try {
-    const supabaseAdmin = createAdminClient();
-    const { data, error } = await supabaseAdmin
+    const supabase = createPublicClient();
+    const { data, error } = await supabase
       .from("admin_questions")
       .select("id,slug,title,level,category,duration,solved_count,description,starter_code,test_script,reference_solution")
       .eq("is_published", true)
       .order("created_at", { ascending: false });
 
     if (error) {
+      logServerError("questions.getPublishedQuestions", error);
       return [] as PracticeQuestion[];
     }
 
-    return (data ?? []).map((item) => toPracticeQuestion(item as RawQuestion));
-  } catch {
+    return (data ?? []).map((item) => normalizePracticeQuestion(item as RawQuestion));
+  } catch (error) {
+    logServerError("questions.getPublishedQuestions", error);
     return [] as PracticeQuestion[];
   }
 }
 
 export async function getPublishedQuestionBySlug(slug: string) {
+  if (!isSupabaseConfigured) {
+    return null;
+  }
+
   try {
-    const supabaseAdmin = createAdminClient();
-    const { data, error } = await supabaseAdmin
+    const supabase = createPublicClient();
+    const { data, error } = await supabase
       .from("admin_questions")
       .select("id,slug,title,level,category,duration,solved_count,description,starter_code,test_script,reference_solution")
       .eq("is_published", true)
@@ -79,11 +91,15 @@ export async function getPublishedQuestionBySlug(slug: string) {
       .maybeSingle();
 
     if (error || !data) {
+      if (error) {
+        logServerError("questions.getPublishedQuestionBySlug", error, { slug });
+      }
       return null;
     }
 
-    return toPracticeQuestion(data as RawQuestion);
-  } catch {
+    return normalizePracticeQuestion(data as RawQuestion);
+  } catch (error) {
+    logServerError("questions.getPublishedQuestionBySlug", error, { slug });
     return null;
   }
 }

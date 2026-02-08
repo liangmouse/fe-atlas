@@ -3,8 +3,21 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { interviewNotes } from "@/lib/content";
+import { getPublishedNotes } from "@/lib/notes";
 
-export default function NotesPage() {
+export const dynamic = "force-dynamic";
+
+export default async function NotesPage() {
+  const publishedNotes = await getPublishedNotes();
+  const notes =
+    publishedNotes.length > 0
+      ? publishedNotes.map((item) => ({
+          title: item.title,
+          digest: item.digest,
+          tags: item.tags,
+        }))
+      : interviewNotes;
+
   return (
     <main className="mx-auto h-full max-w-5xl overflow-y-auto px-4 py-8 sm:px-6 sm:py-10">
       <div className="mb-8 flex items-center justify-between gap-4">
@@ -18,7 +31,7 @@ export default function NotesPage() {
       </div>
 
       <div className="grid gap-4">
-        {interviewNotes.map((item) => (
+        {notes.map((item) => (
           <Card key={item.title}>
             <CardHeader>
               <CardTitle>{item.title}</CardTitle>

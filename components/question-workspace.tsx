@@ -22,11 +22,60 @@ type RunState = {
 
 type LeftTab = "description" | "solution" | "submission";
 
+const EXECUTION_TIMEOUT_MS = 3_000;
+
 async function runChallengeCode(code: string, testScript: string): Promise<RunState> {
-  const executor = new Function(
-    `"use strict"; return (async () => {\n${code}\n${testScript}\n})();`,
-  ) as () => Promise<RunState>;
-  return executor();
+  return await new Promise<RunState>((resolve, reject) => {
+    const workerSource = `
+      self.onmessage = async (event) => {
+        const { code, testScript } = event.data;
+        try {
+          const executor = new Function(
+            '"use strict"; return (async () => {\\n' + code + '\\n' + testScript + '\\n})();'
+          );
+          const result = await executor();
+          self.postMessage({ ok: true, result });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          self.postMessage({ ok: false, error: message });
+        }
+      };
+    `;
+
+    const blob = new Blob([workerSource], { type: "text/javascript" });
+    const workerUrl = URL.createObjectURL(blob);
+    const worker = new Worker(workerUrl);
+
+    const cleanup = () => {
+      worker.terminate();
+      URL.revokeObjectURL(workerUrl);
+    };
+
+    const timeoutId = window.setTimeout(() => {
+      cleanup();
+      reject(new Error("运行超时（超过 3 秒）"));
+    }, EXECUTION_TIMEOUT_MS);
+
+    worker.onmessage = (event: MessageEvent) => {
+      window.clearTimeout(timeoutId);
+      cleanup();
+
+      if (event.data?.ok) {
+        resolve(event.data.result as RunState);
+        return;
+      }
+
+      reject(new Error(event.data?.error ?? "运行失败"));
+    };
+
+    worker.onerror = (event) => {
+      window.clearTimeout(timeoutId);
+      cleanup();
+      reject(new Error(event.message || "运行失败"));
+    };
+
+    worker.postMessage({ code, testScript });
+  });
 }
 
 function setupMonaco(monaco: Monaco) {

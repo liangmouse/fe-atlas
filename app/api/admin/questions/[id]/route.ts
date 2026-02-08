@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { questionPatchSchema } from "@/lib/admin-schemas";
 import { requireAdminFromRequest } from "@/lib/auth/require-admin";
+import { logAdminAction, logServerError } from "@/lib/logger";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 function parseId(id: string) {
@@ -17,6 +19,19 @@ export async function PATCH(
   const auth = await requireAdminFromRequest(request);
   if (!auth.ok) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const rateLimit = checkRateLimit({
+    key: "admin:questions:write",
+    ipLike: request.headers.get("x-forwarded-for"),
+    limit: 20,
+    windowMs: 60_000,
+  });
+  if (!rateLimit.ok) {
+    return NextResponse.json(
+      { error: "Too many requests, please retry later" },
+      { status: 429 },
+    );
   }
 
   const { id } = await params;
@@ -59,11 +74,25 @@ export async function PATCH(
       .eq("id", questionId);
 
     if (error) {
+      logServerError("admin.questions.patch", error, {
+        adminUserId: auth.user.id,
+        questionId,
+      });
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    logAdminAction("question.updated", {
+      adminUserId: auth.user.id,
+      adminEmail: auth.user.email,
+      questionId,
+      fields: Object.keys(patch),
+    });
     return NextResponse.json({ ok: true });
   } catch (error) {
+    logServerError("admin.questions.patch", error, {
+      adminUserId: auth.user.id,
+      questionId,
+    });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 },
@@ -80,6 +109,19 @@ export async function DELETE(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const rateLimit = checkRateLimit({
+    key: "admin:questions:write",
+    ipLike: request.headers.get("x-forwarded-for"),
+    limit: 20,
+    windowMs: 60_000,
+  });
+  if (!rateLimit.ok) {
+    return NextResponse.json(
+      { error: "Too many requests, please retry later" },
+      { status: 429 },
+    );
+  }
+
   const { id } = await params;
   const questionId = parseId(id);
   if (!questionId) {
@@ -94,11 +136,24 @@ export async function DELETE(
       .eq("id", questionId);
 
     if (error) {
+      logServerError("admin.questions.delete", error, {
+        adminUserId: auth.user.id,
+        questionId,
+      });
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    logAdminAction("question.deleted", {
+      adminUserId: auth.user.id,
+      adminEmail: auth.user.email,
+      questionId,
+    });
     return NextResponse.json({ ok: true });
   } catch (error) {
+    logServerError("admin.questions.delete", error, {
+      adminUserId: auth.user.id,
+      questionId,
+    });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 },

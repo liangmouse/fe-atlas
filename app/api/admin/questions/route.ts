@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { questionFormSchema } from "@/lib/admin-schemas";
 import { requireAdminFromRequest } from "@/lib/auth/require-admin";
+import { logAdminAction, logServerError } from "@/lib/logger";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export async function GET(request: NextRequest) {
@@ -52,6 +54,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const rateLimit = checkRateLimit({
+    key: "admin:questions:write",
+    ipLike: request.headers.get("x-forwarded-for"),
+    limit: 20,
+    windowMs: 60_000,
+  });
+  if (!rateLimit.ok) {
+    return NextResponse.json(
+      { error: "Too many requests, please retry later" },
+      { status: 429 },
+    );
+  }
+
   const rawBody = await request.json();
   const parsed = questionFormSchema.safeParse(rawBody);
 
@@ -83,11 +98,19 @@ export async function POST(request: NextRequest) {
     });
 
     if (error) {
+      logServerError("admin.questions.create", error, { adminUserId: auth.user.id });
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    logAdminAction("question.created", {
+      adminUserId: auth.user.id,
+      adminEmail: auth.user.email,
+      slug: body.slug,
+      title: body.title,
+    });
     return NextResponse.json({ ok: true });
   } catch (error) {
+    logServerError("admin.questions.create", error, { adminUserId: auth.user.id });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 },

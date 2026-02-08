@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { notePatchSchema } from "@/lib/admin-schemas";
 import { requireAdminFromRequest } from "@/lib/auth/require-admin";
+import { logAdminAction, logServerError } from "@/lib/logger";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 function parseId(id: string) {
@@ -17,6 +19,19 @@ export async function PATCH(
   const auth = await requireAdminFromRequest(request);
   if (!auth.ok) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const rateLimit = checkRateLimit({
+    key: "admin:notes:write",
+    ipLike: request.headers.get("x-forwarded-for"),
+    limit: 20,
+    windowMs: 60_000,
+  });
+  if (!rateLimit.ok) {
+    return NextResponse.json(
+      { error: "Too many requests, please retry later" },
+      { status: 429 },
+    );
   }
 
   const { id } = await params;
@@ -54,11 +69,25 @@ export async function PATCH(
       .eq("id", noteId);
 
     if (error) {
+      logServerError("admin.notes.patch", error, {
+        adminUserId: auth.user.id,
+        noteId,
+      });
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    logAdminAction("note.updated", {
+      adminUserId: auth.user.id,
+      adminEmail: auth.user.email,
+      noteId,
+      fields: Object.keys(patch),
+    });
     return NextResponse.json({ ok: true });
   } catch (error) {
+    logServerError("admin.notes.patch", error, {
+      adminUserId: auth.user.id,
+      noteId,
+    });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 },
@@ -75,6 +104,19 @@ export async function DELETE(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const rateLimit = checkRateLimit({
+    key: "admin:notes:write",
+    ipLike: request.headers.get("x-forwarded-for"),
+    limit: 20,
+    windowMs: 60_000,
+  });
+  if (!rateLimit.ok) {
+    return NextResponse.json(
+      { error: "Too many requests, please retry later" },
+      { status: 429 },
+    );
+  }
+
   const { id } = await params;
   const noteId = parseId(id);
   if (!noteId) {
@@ -89,11 +131,24 @@ export async function DELETE(
       .eq("id", noteId);
 
     if (error) {
+      logServerError("admin.notes.delete", error, {
+        adminUserId: auth.user.id,
+        noteId,
+      });
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    logAdminAction("note.deleted", {
+      adminUserId: auth.user.id,
+      adminEmail: auth.user.email,
+      noteId,
+    });
     return NextResponse.json({ ok: true });
   } catch (error) {
+    logServerError("admin.notes.delete", error, {
+      adminUserId: auth.user.id,
+      noteId,
+    });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 },

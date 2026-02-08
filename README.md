@@ -1,36 +1,91 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Atlas FE
 
-## Getting Started
+Atlas FE 是一个前端面试复习社区，包含题库练习、八股文和管理员后台。
 
-First, run the development server:
+## 技术栈
+
+- Next.js 16 (App Router)
+- TypeScript
+- Supabase (Auth + Database)
+- Tailwind CSS
+
+## 本地启动
+
+1. 安装依赖
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. 配置环境变量
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+cp .env.example .env.local
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+3. 运行开发环境
 
-## Learn More
+```bash
+pnpm dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+## 环境变量
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| 变量名 | 必填 | 说明 |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | 是 | Supabase Project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 是 | Supabase anon key |
+| `SUPABASE_SERVICE_ROLE_KEY` | 是 | 仅服务端管理接口使用 |
+| `ADMIN_EMAIL_ALLOWLIST` | 是 | 管理员邮箱白名单，逗号分隔 |
+| `GEMINI_API_KEY` | 否 | 题目 AI 优化功能使用 |
+| `GEMINI_MODEL` | 否 | 默认为 `gemini-3-flash-preview` |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Supabase 初始化
 
-## Deploy on Vercel
+需要在 Supabase 中准备以下表（字段名需与代码一致）：
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- `admin_questions`
+- `admin_notes`
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+此外请确保：
+
+- 已启用 Google OAuth（用于登录）
+- 管理员账号邮箱在 `ADMIN_EMAIL_ALLOWLIST` 内
+- 面向公开页面的读取策略允许读取 `is_published = true` 的数据
+
+## 质量检查
+
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+```
+
+## CI
+
+仓库内置 CI：`/.github/workflows/ci.yml`，会在 push / PR 时执行：
+
+- lint
+- typecheck
+- test
+- build
+
+## Vercel 部署
+
+1. 导入仓库到 Vercel
+2. 在 Vercel Project Settings 中配置环境变量（Preview/Production 分开配置）
+3. 先做 Preview 部署验证
+4. 通过后再 Promote 到 Production
+
+建议在上线前完成冒烟：
+
+- 游客访问首页、题库、知识点页
+- 普通用户登录后访问
+- 管理员登录后新增/发布题目和八股文
+- 前台可看到新发布内容
+
+## 回滚策略
+
+- Vercel 回滚到上一个稳定 Deployment
+- 若数据结构变更，保持数据库迁移可回退（向后兼容优先）
